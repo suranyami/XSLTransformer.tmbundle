@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>beforeRunningCommand</key>
-	<string>saveActiveFile</string>
+	<string>nop</string>
 	<key>command</key>
 	<string>#!/usr/bin/env ruby
 
@@ -17,14 +17,16 @@ class XslTransformer
   OUT_PATH = 'cleanup/out'
   WRAP_PATH_PREFIX = 'btweb/wrap/xsl'
   XSL_TEMPLATE = 'cleanup/cleanup.xsl'
-  
+  LOG_FILE = 'xsl_transformer_log_file'
+
   XML_DECLARATION = '&lt;?xml version="1.0" encoding="UTF-8"?&gt;'
   DOCTYPE = '&lt;!DOCTYPE xsl:stylesheet [&lt;!ENTITY nbsp "&amp;#160;"&gt;]&gt;'
   STYLESHEET = '&lt;xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0"&gt;'
-  
+  EMPTY_STYLESHEET = '&lt;xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0"/&gt;'
+
   HEADER = "#{XML_DECLARATION}#{DOCTYPE}#{STYLESHEET}"
   FOOTER = "&lt;/xsl:stylesheet&gt;"
-  
+
   def initialize(root_path)
     Dir.chdir(root_path)
     FileUtils.mkdir_p(OUT_PATH)
@@ -32,69 +34,83 @@ class XslTransformer
 
   def process(in_path, out_path, xsl_path)
     FileUtils.mkdir_p(File.dirname(out_path))
+    log_path = File.join(File.dirname(out_path), LOG_FILE)
+    File.delete(log_path) if File.exists?(log_path)
     cmd = "java -cp transformer/btweb_inf.jar:transformer/xalan-2.7.0.jar:transformer/afmt.jar org.apache.xalan.xslt.Process"
     cmd += " -IN #{in_path} -XSL #{xsl_path}"
-    cmd += " -OUT #{out_path}  2&gt; xsl_transformer_log_file"
+    cmd += " -OUT #{out_path}  2&gt; #{log_path}"
     # puts "#{'-'*80}\n#{cmd}\n#{'-'*80}\n"
-    `#{cmd}` rescue "Transform error!"
+    begin
+      `#{cmd}`
+    rescue
+      return false
+    end
+    no_problem = !File.size?(log_path)
+    puts "Error: #{File.read(log_path)}" unless no_problem
+    return no_problem
   end
-  
+
   def add_declarations(original_path, in_path)
     content = HEADER + File.read(original_path) + FOOTER
     file = File.open(in_path, 'w')
     file.write(content)
     file.close
   end
-  
+
   def strip_declarations(path)
     content = File.open(path).read
     content.gsub!(XML_DECLARATION, '')
     content.gsub!(DOCTYPE, '')
     content.gsub!(STYLESHEET, '')
+    content.gsub!(EMPTY_STYLESHEET, '')
     content.gsub!(FOOTER, '')
+    content.strip!
     file = File.open(path, 'w')
     file.write(content)
     file.close
     file = File.open(path)
     file.read
   end
-  
+
   def self.process_xsl_folder
     xsl_files = File.join(WRAP_PATH_PREFIX, "**/*.xsl")
-    
+
     Dir.glob(xsl_files) do |original_file|
       rel_path = original_file.sub(WRAP_PATH_PREFIX, '')
       in_path = File.join(OUT_PATH, 'input.xsl')
-            
+
       out_path = File.join(OUT_PATH, rel_path)
-      
+
       transformer = XslTransformer.new(ENV['TM_PROJECT_DIRECTORY'])
       transformer.add_declarations(original_file, in_path)
       transformer.process(in_path, out_path, XSL_TEMPLATE)
       transformer.strip_declarations(out_path)
     end
   end
-  
+
   def self.process_selection
     text = ENV['TM_SELECTED_TEXT']
     Dir.chdir(ENV['TM_PROJECT_DIRECTORY'])
-    
+
     FileUtils.mkdir_p(OUT_PATH)
-    
+
     in_path = File.join(OUT_PATH, 'input.xsl')
-    
+
     file = File.open(in_path, 'w')
     file.write(text)
     file.close
-    
+
     out_path = File.join(OUT_PATH, 'output.xsl')
     transformer = XslTransformer.new(ENV['TM_PROJECT_DIRECTORY'])
     transformer.add_declarations(in_path, in_path)
-    transformer.process(in_path, out_path, XSL_TEMPLATE)
-    transformer.strip_declarations(out_path)
-    File.read(out_path)
+    if transformer.process(in_path, out_path, XSL_TEMPLATE)
+      transformer.strip_declarations(out_path)
+      return File.read(out_path)
+    else
+      return text
+    end
   end
-    
+
 end
 
 puts XslTransformer.process_selection
