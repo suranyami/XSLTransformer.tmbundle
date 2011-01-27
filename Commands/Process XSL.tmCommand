@@ -118,11 +118,13 @@ puts XslTransformer.process_selection
 	<key>input</key>
 	<string>selection</string>
 	<key>keyEquivalent</key>
-	<string></string>
+	<string>^~@x</string>
 	<key>name</key>
 	<string>Process XSL</string>
 	<key>output</key>
 	<string>replaceSelectedText</string>
+	<key>scope</key>
+	<string>text.xml.xsl</string>
 	<key>uuid</key>
 	<string>DC2D7750-698A-404D-AE3D-610869801B0A</string>
 </dict>
